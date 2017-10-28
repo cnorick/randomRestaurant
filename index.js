@@ -9,12 +9,15 @@ const https = require('https');
 const APP_ID = process.env.app_id;
 let token;
 
-let userLocation;
+let userLocation, foodType, priceRange;
 
-function buildPath(location) {
+function buildPath(location, foodType, priceRange) {
     const term = 'restaurant';
     const encodedLocation = encodeURIComponent(location);
-    return `/v3/businesses/search?term=${term}&location=${encodedLocation}&open_now`;
+    let url = `/v3/businesses/search?term=${term}&location=${encodedLocation}&open_now&price=${priceRange}`;
+    if(foodType)
+        url += `&categories=${foodType}`;
+    return url;
 }
 
 function buildSpeechOutput(restaurant) {
@@ -46,6 +49,51 @@ function buildCard(restaurant) {
 
 function sanitize(str) {
     return str.replace('&', 'and');
+}
+
+// sets the global foodtype and pricerange slots from event.
+function setSlots(event) {
+    let ft = [];
+    try {
+        let values = event.request.intent.slots.foodtype.resolutions.resolutionsPerAuthority[0].values;
+        for(let v of values){
+            ft.push(v.value.id);
+        }
+
+        foodType = ft.join(',');
+    }
+    catch(e) {
+        if(!e instanceof TypeError){
+            throw e;
+        } 
+        foodType = null;
+    }
+
+    let pr;
+    try {
+        pr = event.request.intent.slots.price.resolutions.resolutionsPerAuthority[0].values[0].value.id;
+    }
+    catch(e) {
+        if(!e instanceof TypeError){
+            throw e;
+        } 
+        pr = null;
+    }
+
+    switch (pr) {
+        case 'cheap':
+            priceRange = '1,2';
+            break;
+        case 'mid':
+            priceRange = '2,3';
+            break;
+        case 'expensive':
+            priceRange = '3,4';
+            break;
+        default:
+            priceRange = '1,2,3,4';
+            break;
+    }
 }
 
 const responses = {
@@ -106,10 +154,12 @@ const handlers = {
         req.end();
     },
     'GetRestaurantList': function () {
+        setSlots(this.event);
+        console.log(foodType, priceRange);
         const options = {
             host: 'api.yelp.com',
             port: 443,
-            path: buildPath(userLocation),
+            path: buildPath(userLocation, foodType, priceRange),
             method: 'GET',
             headers: {
                 'Authorization': 'Bearer ' + token
@@ -241,7 +291,6 @@ const handlers = {
 };
 
 exports.handler = function (event, context) {
-    console.log(JSON.stringify(event), JSON.stringify(context));
     const alexa = Alexa.handler(event, context);
     alexa.APP_ID = APP_ID;
     alexa.registerHandlers(handlers);
