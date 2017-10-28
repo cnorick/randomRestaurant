@@ -10,6 +10,7 @@ const APP_ID = process.env.app_id;
 let token;
 
 let userLocation, foodType, priceRange;
+let requestedType, requestedPrice;
 
 function buildPath(location, foodType, priceRange) {
     const term = 'restaurant';
@@ -25,8 +26,8 @@ function buildSpeechOutput(restaurant) {
     const distance = (restaurant.distance * 0.000621371).toFixed(1); // miles
     const name = sanitize(restaurant.name);
 
-    const response = `${name} is ${distance} miles away if you're in the mood for ${category}...
-        Check the Alexa app for more information`;
+    const response = `${name} is ${distance} miles away if you're in the mood for ${requestedPrice || ''} ${category}...
+        Check the Alexa app for address and more information`;
 
     console.log(response);
     return response;
@@ -51,7 +52,7 @@ function sanitize(str) {
     return str.replace('&', 'and');
 }
 
-// sets the global foodtype and pricerange slots from event.
+// sets the global variables from the foodtype and pricerange slots from event.
 function setSlots(event) {
     let ft = [];
     try {
@@ -61,23 +62,27 @@ function setSlots(event) {
         }
 
         foodType = ft.join(',');
+        requestedType = event.request.intent.slots.foodtype.value;
     }
     catch(e) {
         if(!e instanceof TypeError){
             throw e;
         } 
         foodType = null;
+        requestedType = null;
     }
 
     let pr;
     try {
         pr = event.request.intent.slots.price.resolutions.resolutionsPerAuthority[0].values[0].value.id;
+        requestedPrice = event.request.intent.slots.price.value;
     }
     catch(e) {
         if(!e instanceof TypeError){
             throw e;
         } 
         pr = null;
+        requestedPrice = null;
     }
 
     switch (pr) {
@@ -198,7 +203,7 @@ const handlers = {
         this.emit(':tellWithCard', speech, card.title, card.content, card.image);
     },
     'NoRestaurants': function () {
-        const speech = 'No open restaurants found in your area. Make sure your address is up to date in the Alexa app and try again.';
+        const speech = `There are no ${requestedPrice || ''} ${requestedType || ''} restaurants open in your area. Make sure your address is up to date in the Alexa app, or try different search parameters.`;
         this.emit(':tell', speech);
     },
     'AMAZON.HelpIntent': function () {
