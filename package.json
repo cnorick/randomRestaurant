@@ -1,0 +1,30 @@
+{
+  "name": "random-restaurant",
+  "version": "1.0.0",
+  "description": "Alexa app that gives users a random restaurant closeby.",
+  "main": "randomRestaurant.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cnorick/randomRestaurant.git"
+  },
+  "keywords": [
+    "alexa",
+    "random",
+    "restaurant",
+    "amazon",
+    "aws"
+  ],
+  "author": "Nathan Orick",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/cnorick/randomRestaurant/issues"
+  },
+  "homepage": "https://github.com/cnorick/randomRestaurant#readme",
+  "dependencies": {
+    "alexa-sdk": "^1.0.12",
+    "https": "^1.0.0"
+  }
+}
