@@ -8,3 +8,5 @@ Have you and your friends ever had a disagreement about where to have dinner? Ar
 ```"Alexa, ask Random Restaurant for a place to eat."```
 
 ```"Alexa, ask Random Restaurant for mid-range Chinese food."```
+
+![Random Restaurant](https://github.com/cnorick/randomRestaurant/blob/master/RandomRestaurant.png "Random Restaurant")
