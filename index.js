@@ -7,7 +7,7 @@ const Alexa = require('alexa-sdk');
 const https = require('https');
 
 const APP_ID = process.env.app_id;
-let token;
+const API_KEY = process.env.api_key;
 
 let userLocation, foodType, priceRange;
 let requestedType, requestedPrice;
@@ -127,36 +127,7 @@ const handlers = {
         this.emit(':tell', speech);
     },
     'GetRestaurant': function () {
-        this.emit('GetToken');
-    },
-    'GetToken': function () {
-        const data = `client_id=${process.env.client_id}&client_secret=${process.env.client_secret}&grant_type=client_credentials`;
-        const options = {
-            host: 'api.yelp.com',
-            port: 443,
-            path: '/oauth2/token',
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Content-Length': Buffer.byteLength(data)
-            }
-        };
-        const _this = this;
-        const req = https.request(options, (res) => {
-            let body = '';
-            res.on('data', (d) => {
-                body += d;
-            });
-            res.on('end', function () {
-                token = JSON.parse(body).access_token;
-                _this.emit('GetRestaurantList');
-            });
-        });
-        req.on('error', (e) => {
-            console.error(e);
-        });
-        req.write(data);
-        req.end();
+        this.emit('GetRestaurantList');
     },
     'GetRestaurantList': function () {
         setSlots(this.event);
@@ -167,7 +138,7 @@ const handlers = {
             path: buildPath(userLocation, foodType, priceRange),
             method: 'GET',
             headers: {
-                'Authorization': 'Bearer ' + token
+                'Authorization': 'Bearer ' + API_KEY
             }
         };
 
@@ -179,6 +150,7 @@ const handlers = {
             });
             res.on('end', () => {
                 let parsedData = JSON.parse(body);
+                console.log(parsedData)
                 _this.emit('SendResponse', parsedData.businesses);
             });
         });
