@@ -41,10 +41,10 @@ function buildCard(restaurant) {
     return {
         title: restaurant.name,
         content: content,
-        image: null /*{
+        image: {
             smallImageUrl: restaurant.image_url,
             largeImageUrl: restaurant.image_url
-        }*/
+        }
     };
 }
 
