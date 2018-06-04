@@ -3,25 +3,278 @@
 
 'use strict';
 
-const Alexa = require('alexa-sdk');
+const Alexa = require('ask-sdk-core');
 const https = require('https');
 
 const APP_ID = process.env.app_id;
 const API_KEY = process.env.api_key;
 
-let userLocation, foodType, priceRange;
-let requestedType, requestedPrice;
 
+const responses = {
+    SKILL_NAME: 'Random Restaurant',
+    GET_RESTAURANT_MESSAGE: "Try out ",
+    HELP: 'You can say find a random restaurant or you may specify a specific type and price of restaurant. For example, find a cheap chinese restaurant... What can I help you with?',
+    HELP_REPROMPT: 'What can I help you with?',
+    GOODBYE: 'Goodbye!',
+    YELP_ATTRIBUTION: ' ... Nearby restaurants provided by Yelp',
+    NOTIFY_MISSING_PERMISSIONS: 'Please enable Location permissions in the Amazon Alexa app.',
+    NO_ADDRESS: "It looks like you don't have an address set. You can set your address from the companion app.",
+    ERROR: "Uh Oh. Looks like something went wrong.",
+    UNHANDLED: 'This skill doesn\'t support that. Please ask something else.',
+    LOCATION_FAILURE: 'There was an error with the Device Address API. Make sure your address is set in the Alex app and try again.',
+};
+
+const PERMISSIONS = [`read::alexa:device:all:address`];
+
+const GetRestaurantIntent = {
+    canHandle(handlerInput) {
+        const { request } = handlerInput.requestEnvelope;
+
+        return request.type === 'IntentRequest' && request.intent.name === 'GetRestaurantIntent';
+    },
+    async handle(handlerInput) {
+        const { requestEnvelope, responseBuilder } = handlerInput;
+        const { request } = requestEnvelope;
+
+        let address;
+
+        try {
+            address = await GetAddress(handlerInput);
+        } catch (error) {
+            if (error.name === 'AddressError') {
+                return error.responseBuilder;
+            }
+            else throw error;
+        }
+
+        let { priceRange, requestedPrice, foodType, requestedType } = getSlots(request.intent);
+        const restaurant = await GetRandomRestaurant(address, foodType, priceRange);
+
+        if (!restaurant) {
+            const speech = `There are no ${requestedPrice || ''} ${requestedType || ''} restaurants open in your area. Make sure your address is up to date in the Alexa app, or try different search parameters.`;
+            return responseBuilder
+                .speak(speech)
+                .withShouldEndSession(true)
+                .getResponse();
+        }
+
+
+        const speech = buildSpeechOutput(restaurant, requestedPrice);
+        const card = buildCard(restaurant);
+        return responseBuilder
+            .speak(speech)
+            .withStandardCard(card.title, card.content, card.image.smallImageUrl, card.image.largeImageUrl)
+            .getResponse();
+    }
+};
+
+const LaunchRequest = {
+    canHandle(handlerInput) {
+        return handlerInput.requestEnvelope.request.type === 'LaunchRequest';
+    },
+    async handle(handlerInput) {
+        // Automatically use the GetRestaurantIntent on launch if no intent specified.
+        return GetRestaurantIntent.handle(handlerInput);
+    }
+};
+
+const HelpIntent = {
+    canHandle(handlerInput) {
+        const { request } = handlerInput.requestEnvelope;
+
+        return request.type === 'IntentRequest' && request.intent.name === 'AMAZON.HelpIntent';
+    },
+    handle(handlerInput) {
+        return handlerInput.responseBuilder
+            .speak(responses.HELP)
+            .reprompt(responses.HELP)
+            .getResponse();
+    }
+}
+
+const CancelIntent = {
+    canHandle(handlerInput) {
+        const { request } = handlerInput.requestEnvelope;
+
+        return request.type === 'IntentRequest' && request.intent.name === 'AMAZON.CancelIntent';
+    },
+    handle(handlerInput) {
+        return handlerInput.responseBuilder
+            .speak(responses.GOODBYE)
+            .getResponse();
+    },
+};
+
+const StopIntent = {
+    canHandle(handlerInput) {
+        const { request } = handlerInput.requestEnvelope;
+
+        return request.type === 'IntentRequest' && request.intent.name === 'AMAZON.StopIntent';
+    },
+    handle(handlerInput) {
+        return handlerInput.responseBuilder
+            .speak(responses.GOODBYE)
+            .getResponse();
+    },
+};
+
+const SessionEndedRequest = {
+    canHandle(handlerInput) {
+        return handlerInput.requestEnvelope.request.type === 'SessionEndedRequest';
+    },
+    handle(handlerInput) {
+        console.log(`Session ended with reason: ${handlerInput.requestEnvelope.request.reason}`);
+
+        return handlerInput.responseBuilder.getResponse();
+    },
+};
+
+const UnhandledIntent = {
+    canHandle() {
+        return true;
+    },
+    handle(handlerInput) {
+        return handlerInput.responseBuilder
+            .speak(responses.UNHANDLED)
+            .reprompt(responses.UNHANDLED)
+            .getResponse();
+    },
+};
+
+const GetAddressError = {
+    canHandle(handlerInput, error) {
+        return error.name === 'ServiceError';
+    },
+    handle(handlerInput, error) {
+        if (error.statusCode === 403) {
+            return handlerInput.responseBuilder
+                .speak(responses.NOTIFY_MISSING_PERMISSIONS)
+                .withAskForPermissionsConsentCard(PERMISSIONS)
+                .getResponse();
+        }
+        return handlerInput.responseBuilder
+            .speak(responses.LOCATION_FAILURE)
+            .reprompt(responses.LOCATION_FAILURE)
+            .getResponse();
+    },
+};
+
+const skillBuilder = Alexa.SkillBuilders.custom();
+
+exports.handler = skillBuilder
+    .addRequestHandlers(
+        LaunchRequest,
+        GetRestaurantIntent,
+        SessionEndedRequest,
+        HelpIntent,
+        CancelIntent,
+        StopIntent,
+        UnhandledIntent,
+    )
+    .addErrorHandlers(GetAddressError)
+    .withApiClient(new Alexa.DefaultApiClient())
+    .lambda();
+
+
+// Checks if the user has address permissions and an address saved. If they don't have both, then
+// the method throws an AddressError. It contains a responseBuilder that can be returned from a handler.
+// Otherwise, if the user has both, then the method returns an address string.
+async function GetAddress(handlerInput) {
+    const { requestEnvelope, serviceClientFactory, responseBuilder } = handlerInput;
+
+    const consentToken = requestEnvelope.context.System.user.permissions
+        && requestEnvelope.context.System.user.permissions.consentToken;
+    if (!consentToken) {
+        let error = new Error("No address permissions");
+        error.name = "AddressError";
+        error.responseBuilder = responseBuilder
+            .speak(responses.NOTIFY_MISSING_PERMISSIONS)
+            .withAskForPermissionsConsentCard(PERMISSIONS)
+            .getResponse();
+        throw error;
+    }
+    try {
+        const { deviceId } = requestEnvelope.context.System.device;
+        const deviceAddressServiceClient = serviceClientFactory.getDeviceAddressServiceClient();
+        const addressResponse = await deviceAddressServiceClient.getFullAddress(deviceId);
+
+        if (addressResponse.addressLine1 === null && addressResponse.stateOrRegion === null && addressResponse.postalCode === null) {
+            let error = new Error("Missing address");
+            error.name = "AddressError";
+            error.responseBuilder = responseBuilder.speak(responses.NO_ADDRESS).getResponse();
+            throw error;
+        } else {
+            let address = '';
+            for (let prop in addressResponse) {
+                if (addressResponse[prop] !== null) {
+                    address += addressResponse[prop] + ' ';
+                }
+            }
+            return address;
+        }
+    } catch (error) {
+        if (error.name !== 'ServiceError' && error.name !== 'AddressError') {
+            error.name = 'AddressError';
+            error.response = responseBuilder.speak(responses.ERROR).getResponse();
+        }
+        throw error;
+    }
+};
+
+// Chooses a random restaurant from a list returned from yelp.
+async function GetRandomRestaurant(address, foodType, priceRange) {
+    const businesses = await QueryYelp(address, foodType, priceRange);
+    if (businesses.length === 0) {
+        return null;
+    }
+    const randIndex = Math.floor(Math.random() * businesses.length);
+    return businesses[randIndex];
+}
+
+// Returns a list of businesses from yelp that meet the specified criteria.
+async function QueryYelp(address, foodType, priceRange) {
+    const options = {
+        host: 'api.yelp.com',
+        port: 443,
+        path: buildPath(address, foodType, priceRange),
+        method: 'GET',
+        headers: {
+            'Authorization': 'Bearer ' + API_KEY
+        }
+    };
+
+    // Wrap the web request in a promise to be awaited.
+    return new Promise(function (resolve, reject) {
+        const req = https.request(options, (res) => {
+            let body = '';
+            res.on('data', (d) => {
+                body += d;
+            });
+            res.on('end', () => {
+                let parsedData = JSON.parse(body);
+                resolve(parsedData.businesses);
+            });
+        });
+        req.on('error', (e) => {
+            console.error(e);
+            reject(e)
+        });
+
+        req.end();
+    });
+}
+
+// Build yelp query path.
 function buildPath(location, foodType, priceRange) {
     const term = 'restaurant';
     const encodedLocation = encodeURIComponent(location);
     let url = `/v3/businesses/search?term=${term}&location=${encodedLocation}&open_now&price=${priceRange}`;
-    if(foodType)
+    if (foodType)
         url += `&categories=${foodType}`;
     return url;
 }
 
-function buildSpeechOutput(restaurant) {
+function buildSpeechOutput(restaurant, requestedPrice) {
     const category = restaurant.categories[0].title;
     const distance = (restaurant.distance * 0.000621371).toFixed(1); // miles
     const name = sanitize(restaurant.name);
@@ -52,307 +305,58 @@ function sanitize(str) {
     return str.replace('&', 'and');
 }
 
-// sets the global variables from the foodtype and pricerange slots from event.
-function setSlots(event) {
+// Pulls information from the intent.
+// Returns an object containing what the user actually said, and what price range and food type got matched with that request.
+function getSlots(intent) {
     let ft = [];
+    let returnObj = {};
+
     try {
-        let values = event.request.intent.slots.foodtype.resolutions.resolutionsPerAuthority[0].values;
-        for(let v of values){
+        // values contains tuples of (name, id).
+        // name is what the user asked for exactly. id is the type of food related to that name.
+        let values = intent.slots.foodtype.resolutions.resolutionsPerAuthority[0].values;
+        for (let v of values) {
             ft.push(v.value.id);
         }
-
-        foodType = ft.join(',');
-        requestedType = event.request.intent.slots.foodtype.value;
+        returnObj.foodType = ft.join(',');
+        returnObj.requestedType = intent.slots.foodtype.value;
     }
-    catch(e) {
-        if(!e instanceof TypeError){
+    catch (e) {
+        console.log(e)
+        if (!e instanceof TypeError) {
             throw e;
-        } 
-        foodType = null;
-        requestedType = null;
+        }
+        returnObj.foodType = null;
+        returnObj.requestedType = null;
     }
 
     let pr;
     try {
-        pr = event.request.intent.slots.price.resolutions.resolutionsPerAuthority[0].values[0].value.id;
-        requestedPrice = event.request.intent.slots.price.value;
+        pr = intent.slots.price.resolutions.resolutionsPerAuthority[0].values[0].value.id;
+        returnObj.requestedPrice = intent.slots.price.value;
     }
-    catch(e) {
-        if(!e instanceof TypeError){
+    catch (e) {
+        if (!e instanceof TypeError) {
             throw e;
-        } 
+        }
         pr = null;
-        requestedPrice = null;
+        returnObj.requestedPrice = null;
     }
 
     switch (pr) {
         case 'cheap':
-            priceRange = '1,2';
+            returnObj.priceRange = '1,2';
             break;
         case 'mid':
-            priceRange = '2,3';
+            returnObj.priceRange = '2,3';
             break;
         case 'expensive':
-            priceRange = '3,4';
+            returnObj.priceRange = '3,4';
             break;
         default:
-            priceRange = '1,2,3,4';
+            returnObj.priceRange = '1,2,3,4';
             break;
     }
-}
 
-const responses = {
-    SKILL_NAME: 'Random Restaurant',
-    GET_RESTAURANT_MESSAGE: "Try out ",
-    HELP_MESSAGE: 'You can say find a random restaurant, or, cancel... What can I help you with?',
-    HELP_REPROMPT: 'What can I help you with?',
-    STOP_MESSAGE: 'Goodbye!',
-    YELP_ATTRIBUTION: ' ... Nearby restaurants provided by Yelp',
-    NOTIFY_MISSING_PERMISSIONS: 'Please enable Location permissions in the Amazon Alexa app.',
-    NO_ADDRESS: "It looks like you don't have an address set. You can set your address from the companion app.",
-    ERROR: "Uh Oh. Looks like something went wrong."
-};
-
-const PERMISSIONS = [`read::alexa:device:all:address`];
-
-const handlers = {
-    'LaunchRequest': function () {
-        this.emit('restaurant');
-    },
-    'restaurant': function () {
-        this.emit('GetAddress');
-    },
-    'GetLocationPermission': function () {
-        const speech = `Random Restaurant doesn't have permission to access your location. You can change permissions in the Alexa app.`;
-        this.emit(':tell', speech);
-    },
-    'GetRestaurant': function () {
-        this.emit('GetRestaurantList');
-    },
-    'GetRestaurantList': function () {
-        setSlots(this.event);
-        console.log(foodType, priceRange);
-        const options = {
-            host: 'api.yelp.com',
-            port: 443,
-            path: buildPath(userLocation, foodType, priceRange),
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + API_KEY
-            }
-        };
-
-        const _this = this;
-        const req = https.request(options, (res) => {
-            let body = '';
-            res.on('data', (d) => {
-                body += d;
-            });
-            res.on('end', () => {
-                let parsedData = JSON.parse(body);
-                console.log(parsedData)
-                _this.emit('SendResponse', parsedData.businesses);
-            });
-        });
-        req.on('error', (e) => {
-            console.error(e);
-        });
-        req.end();
-
-    },
-    'SendResponse': function (restaurantArr) {
-        if (restaurantArr.length === 0) {
-            this.emit('NoRestaurants');
-            return;
-        }
-        const randIndex = Math.floor(Math.random() * restaurantArr.length);
-        const randRest = restaurantArr[randIndex];
-
-        // Create speech output
-        const speech = buildSpeechOutput(randRest);
-        const card = buildCard(randRest);
-
-        this.emit(':tellWithCard', speech, card.title, card.content, card.image);
-    },
-    'NoRestaurants': function () {
-        const speech = `There are no ${requestedPrice || ''} ${requestedType || ''} restaurants open in your area. Make sure your address is up to date in the Alexa app, or try different search parameters.`;
-        this.emit(':tell', speech);
-    },
-    'AMAZON.HelpIntent': function () {
-        const speechOutput = responses.HELP_MESSAGE;
-        const reprompt = responses.HELP_MESSAGE;
-        this.emit(':ask', speechOutput, reprompt);
-    },
-    'AMAZON.CancelIntent': function () {
-        this.emit(':tell', responses.STOP_MESSAGE);
-    },
-    'AMAZON.StopIntent': function () {
-        this.emit(':tell', responses.STOP_MESSAGE);
-    },
-    'Unhandled': function (event) {
-        console.log(event);
-        this.emit(':tell', responses.ERROR);
-    },
-    'GetAddress': function () {
-        console.info("Starting getAddressHandler()");
-
-        // If we have not been provided with a consent token, this means that the user has not
-        // authorized your skill to access this information. In this case, you should prompt them
-        // that you don't have permissions to retrieve their address.
-        if (!(this.event && this.event.context && this.event.context.System &&
-            this.event.context.System.user && this.event.context.System.user.permissions
-            && this.event.context.System.user.permissions.consentToken)) {
-
-            this.emit(":tellWithPermissionCard", responses.NOTIFY_MISSING_PERMISSIONS, PERMISSIONS);
-
-            // Lets terminate early since we can't do anything else.
-            console.log("User did not give us permissions to access their address.");
-            console.info("Ending getAddressHandler()");
-            return;
-        }
-        const consentToken = this.event.context.System.user.permissions.consentToken;
-        const deviceId = this.event.context.System.device.deviceId;
-        const apiEndpoint = this.event.context.System.apiEndpoint;
-
-        const alexaDeviceAddressClient = new AlexaDeviceAddressClient(apiEndpoint, deviceId, consentToken);
-        let deviceAddressRequest = alexaDeviceAddressClient.getFullAddress();
-
-        deviceAddressRequest.then((addressResponse) => {
-            switch (addressResponse.statusCode) {
-                case 200:
-                    console.log("Address successfully retrieved, now responding to user.");
-                    console.log(addressResponse)
-                    let address = '';
-                    for (let prop in addressResponse.address) {
-                        if (addressResponse.address[prop] !== null) {
-                            address += addressResponse.address[prop] + ' ';
-                        }
-                    }
-                    userLocation = address;
-                    console.log(userLocation)
-                    this.emit("GetRestaurant");
-                    break;
-                case 204:
-                    // This likely means that the user didn't have their address set via the companion app.
-                    console.log("Successfully requested from the device address API, but no address was returned.");
-                    this.emit(":tell", responses.NO_ADDRESS);
-                    break;
-                case 403:
-                    console.log("The consent token we had wasn't authorized to access the user's address.");
-                    this.emit(":tellWithPermissionCard", responses.NOTIFY_MISSING_PERMISSIONS, PERMISSIONS);
-                    break;
-                default:
-                    this.emit(":ask", responses.LOCATION_FAILURE, responses.LOCATION_FAILURE);
-            }
-
-            console.info("Ending getAddressHandler()");
-        });
-
-        deviceAddressRequest.catch((error) => {
-            this.emit(":tell", responses.ERROR);
-            console.error(error);
-            console.info("Ending getAddressHandler()");
-        });
-    },
-};
-
-exports.handler = function (event, context) {
-    const alexa = Alexa.handler(event, context);
-    alexa.APP_ID = APP_ID;
-    alexa.registerHandlers(handlers);
-    alexa.execute();
-};
-
-
-/**
- * This is a small wrapper client for the Alexa Address API.
- */
-class AlexaDeviceAddressClient {
-
-    /**
-     * Retrieve an instance of the Address API client.
-     * @param apiEndpoint the endpoint of the Alexa APIs.
-     * @param deviceId the device ID being targeted.
-     * @param consentToken valid consent token.
-     */
-    constructor(apiEndpoint, deviceId, consentToken) {
-        console.log("Creating AlexaAddressClient instance.");
-        this.deviceId = deviceId;
-        this.consentToken = consentToken;
-        this.endpoint = apiEndpoint.replace(/^https?:\/\//i, "");
-    }
-
-    /**
-     * This will make a request to the Address API using the device ID and
-     * consent token provided when the Address Client was initialized.
-     * This will retrieve the full address of a device.
-     * @return {Promise} promise for the request in flight.
-     */
-    getFullAddress() {
-        const options = this.__getRequestOptions(`/v1/devices/${this.deviceId}/settings/address`);
-
-        return new Promise((fulfill, reject) => {
-            this.__handleDeviceAddressApiRequest(options, fulfill, reject);
-        });
-    }
-
-    /**
-     * This will make a request to the Address API using the device ID and
-     * consent token provided when the Address Client was initialized.
-     * This will retrieve the country and postal code of a device.
-     * @return {Promise} promise for the request in flight.
-     */
-    getCountryAndPostalCode() {
-        const options = this.__getRequestOptions(
-            `/v1/devices/${this.deviceId}/settings/address/countryAndPostalCode`);
-
-        return new Promise((fulfill, reject) => {
-            this.__handleDeviceAddressApiRequest(options, fulfill, reject);
-        });
-    }
-
-    /**
-     * This is a helper method that makes requests to the Address API and handles the response
-     * in a generic manner. It will also resolve promise methods.
-     * @param requestOptions
-     * @param fulfill
-     * @param reject
-     * @private
-     */
-    __handleDeviceAddressApiRequest(requestOptions, fulfill, reject) {
-        https.get(requestOptions, (response) => {
-            console.log(`Device Address API responded with a status code of : ${response.statusCode}`);
-
-            response.on('data', (data) => {
-                let responsePayloadObject = JSON.parse(data);
-
-                const deviceAddressResponse = {
-                    statusCode: response.statusCode,
-                    address: responsePayloadObject
-                };
-
-                fulfill(deviceAddressResponse);
-            });
-        }).on('error', (e) => {
-            console.error(e);
-            reject();
-        });
-    }
-
-    /**
-     * Private helper method for retrieving request options.
-     * @param path the path that you want to hit against the API provided by the skill event.
-     * @return {{hostname: string, path: *, method: string, headers: {Authorization: string}}}
-     * @private
-     */
-    __getRequestOptions(path) {
-        return {
-            hostname: this.endpoint,
-            path: path,
-            method: 'GET',
-            'headers': {
-                'Authorization': 'Bearer ' + this.consentToken
-            }
-        };
-    }
+    return returnObj;
 }
