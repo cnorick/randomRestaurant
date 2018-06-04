@@ -290,7 +290,11 @@ function buildCard(restaurant) {
     const address = restaurant.location.display_address.join('\n');
     const phone = restaurant.phone;
     const url = restaurant.url;
-    const content = `${address}\nNearby restaurant search provided by Yelp.`;
+    const content = `${address}
+    ${phone}
+    
+    Nearby restaurant search provided by Yelp.
+    `;
     return {
         title: restaurant.name,
         content: content,
