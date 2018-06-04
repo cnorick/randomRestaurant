@@ -293,7 +293,8 @@ function buildSpeechOutput(restaurant, requestedPrice) {
 
 function buildCard(restaurant) {
     const address = restaurant.location.display_address.join('\n');
-    const phone = restaurant.phone;
+    const phone = restaurant.display_phone || restaurant.phone;
+
     const url = restaurant.url;
     const content = `${address}
     ${phone}
@@ -374,6 +375,7 @@ async function StoreInteraction(handlerInput, address, requestedPrice, requested
     const { requestEnvelope } = handlerInput;
     let params;
 
+    console.log(restaurant)
     try { // try in case some of the nested objects aren't there.
         params = {
             TableName: 'RandomRestaurantUses',
@@ -385,7 +387,13 @@ async function StoreInteraction(handlerInput, address, requestedPrice, requested
                 'requestedFoodType': { S: requestedType },
                 'matchedFoodType': { S: foodType },
                 'requestedPrice': { S: requestedPrice },
-                'matchedPrice': { S: priceRange }
+                'matchedPrice': { S: priceRange },
+                'recommendedRestaurantName': { S: restaurant.name },
+                'recommendedRestaurantAlias': { S: restaurant.alias },
+                'recommendedRestaurantRating': { N: restaurant.rating.toString() },
+                'recommendedRestaurantPrice': { S: restaurant.price },
+                'recommendedRestaurantDistance': { N: restaurant.distance.toString() },
+                'recommendedRestaurantZip': { N: restaurant.zip_code },
             }
         };
 
