@@ -4,7 +4,10 @@
 'use strict';
 
 const Alexa = require('ask-sdk-core');
+const AWS = require('aws-sdk')
 const https = require('https');
+const ddb = new AWS.DynamoDB({ apiVersion: '2012-10-08' });
+
 
 const APP_ID = process.env.app_id;
 const API_KEY = process.env.api_key;
@@ -36,10 +39,10 @@ const GetRestaurantIntent = {
         const { requestEnvelope, responseBuilder } = handlerInput;
         const { request } = requestEnvelope;
 
-        let address;
+        let addressObject;
 
         try {
-            address = await GetAddress(handlerInput);
+            addressObject = await GetAddress(handlerInput);
         } catch (error) {
             if (error.name === 'AddressError') {
                 return error.responseBuilder;
@@ -48,7 +51,7 @@ const GetRestaurantIntent = {
         }
 
         let { priceRange, requestedPrice, foodType, requestedType } = getSlots(request.intent);
-        const restaurant = await GetRandomRestaurant(address, foodType, priceRange);
+        const restaurant = await GetRandomRestaurant(addressObject.string, foodType, priceRange);
 
         if (!restaurant) {
             const speech = `There are no ${requestedPrice || ''} ${requestedType || ''} restaurants open in your area. Make sure your address is up to date in the Alexa app, or try different search parameters.`;
@@ -58,6 +61,8 @@ const GetRestaurantIntent = {
                 .getResponse();
         }
 
+
+        await StoreInteraction(handlerInput, addressObject.object, requestedPrice, requestedType, foodType, priceRange, restaurant);
 
         const speech = buildSpeechOutput(restaurant, requestedPrice);
         const card = buildCard(restaurant);
@@ -170,7 +175,7 @@ exports.handler = skillBuilder
         CancelIntent,
         StopIntent,
         UnhandledIntent,
-    )
+)
     .addErrorHandlers(GetAddressError)
     .withApiClient(new Alexa.DefaultApiClient())
     .lambda();
@@ -210,7 +215,7 @@ async function GetAddress(handlerInput) {
                     address += addressResponse[prop] + ' ';
                 }
             }
-            return address;
+            return { string: address, object: addressResponse };
         }
     } catch (error) {
         if (error.name !== 'ServiceError' && error.name !== 'AddressError') {
@@ -363,4 +368,54 @@ function getSlots(intent) {
     }
 
     return returnObj;
+}
+
+async function StoreInteraction(handlerInput, address, requestedPrice, requestedType, foodType, priceRange, restaurant) {
+    const { requestEnvelope } = handlerInput;
+    let params;
+
+    try { // try in case some of the nested objects aren't there.
+        params = {
+            TableName: 'RandomRestaurantUses',
+            Item: {
+                'userId': { S: requestEnvelope.session.user.userId },
+                'timestamp': { S: requestEnvelope.request.timestamp },
+                'deviceId': { S: requestEnvelope.context.System.device.deviceId },
+                'locale': { S: requestEnvelope.request.locale },
+                'requestedFoodType': { S: requestedType },
+                'matchedFoodType': { S: foodType },
+                'requestedPrice': { S: requestedPrice },
+                'matchedPrice': { S: priceRange }
+            }
+        };
+
+        // Save each of the address fields to the item.
+        for(let prop in address) {
+            if(isNaN(parseInt(address[prop]))) {
+                params.Item[prop] = { S: address[prop] };
+            }
+            else { // If it is a number
+                params.Item[prop] = { N: address[prop] };
+            }
+        }
+
+        // If any of the properties are null, this removes them from the Item object.
+        // dynamodb doesn't like nulls or empty strings.
+        for(let prop in params.Item) {
+            if(!params.Item[prop][Object.keys(params.Item[prop])[0]])
+                delete params.Item[prop];
+        }
+
+    } catch (error) {
+        console.log(error);
+    }
+
+    // Call DynamoDB to add the item to the table
+    ddb.putItem(params, function (err, data) {
+        if (err) {
+            console.log("Error saving to db", err);
+        } else {
+            console.log("Successfully saved to db", data);
+        }
+    });
 }
