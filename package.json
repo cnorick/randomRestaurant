@@ -24,7 +24,7 @@
   },
   "homepage": "https://github.com/cnorick/randomRestaurant#readme",
   "dependencies": {
-    "alexa-sdk": "^1.0.12",
+    "alexa-sdk": "^1.0.25",
     "https": "^1.0.0"
   }
 }
