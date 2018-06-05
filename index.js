@@ -373,50 +373,55 @@ function getSlots(intent) {
 
 async function StoreInteraction(handlerInput, address, requestedPrice, requestedType, foodType, priceRange, restaurant) {
     const { requestEnvelope } = handlerInput;
-    let params;
+
+    const userId = requestEnvelope.session && requestEnvelope.session.user && requestEnvelope.session.user.userId;
+    const timestamp = requestEnvelope.request && requestEnvelope.request.timestamp;
+    const deviceId = requestEnvelope.context && requestEnvelope.context.System && requestEnvelope.context.System.device && requestEnvelope.context.System.device.deviceId;
+    const locale = requestEnvelope.request && requestEnvelope.request.locale;
 
     console.log(restaurant)
-    try { // try in case some of the nested objects aren't there.
-        params = {
-            TableName: 'RandomRestaurantUses',
-            Item: {
-                'userId': { S: requestEnvelope.session.user.userId },
-                'timestamp': { S: requestEnvelope.request.timestamp },
-                'deviceId': { S: requestEnvelope.context.System.device.deviceId },
-                'locale': { S: requestEnvelope.request.locale },
-                'requestedFoodType': { S: requestedType },
-                'matchedFoodType': { S: foodType },
-                'requestedPrice': { S: requestedPrice },
-                'matchedPrice': { S: priceRange },
-                'recommendedRestaurantName': { S: restaurant.name },
-                'recommendedRestaurantAlias': { S: restaurant.alias },
-                'recommendedRestaurantRating': { N: restaurant.rating.toString() },
-                'recommendedRestaurantPrice': { S: restaurant.price },
-                'recommendedRestaurantDistance': { N: restaurant.distance.toString() },
-                'recommendedRestaurantZip': { N: restaurant.zip_code },
-            }
-        };
-
-        // Save each of the address fields to the item.
-        for(let prop in address) {
-            if(isNaN(parseInt(address[prop]))) {
-                params.Item[prop] = { S: address[prop] };
-            }
-            else { // If it is a number
-                params.Item[prop] = { N: address[prop] };
-            }
+    const params = {
+        TableName: 'RandomRestaurantUses',
+        Item: {
+            'userId': { S: userId },
+            'timestamp': { S: timestamp },
+            'deviceId': { S: deviceId },
+            'locale': { S: locale },
+            'requestedFoodType': { S: requestedType },
+            'matchedFoodType': { S: foodType },
+            'requestedPrice': { S: requestedPrice },
+            'matchedPrice': { S: priceRange },
+            'recommendedRestaurantName': { S: restaurant.name },
+            'recommendedRestaurantAlias': { S: restaurant.alias },
+            'recommendedRestaurantRating': { N: restaurant.rating && restaurant.rating.toString() },
+            'recommendedRestaurantPrice': { S: restaurant.price },
+            'recommendedRestaurantDistance': { N: restaurant.distance && restaurant.distance.toString() },
+            'recommendedRestaurantZip': { N: restaurant.location && restaurant.location.zip_code },
         }
+    };
 
-        // If any of the properties are null, this removes them from the Item object.
-        // dynamodb doesn't like nulls or empty strings.
-        for(let prop in params.Item) {
-            if(!params.Item[prop][Object.keys(params.Item[prop])[0]])
-                delete params.Item[prop];
+    // Save each of the address fields to the item.
+    for (let prop in address) {
+        if (isNaN(address[prop])) {
+            params.Item[prop] = { S: address[prop] };
         }
-
-    } catch (error) {
-        console.log(error);
+        else { // If it is a number
+            params.Item[prop] = { N: address[prop] };
+        }
     }
+
+    // If any of the properties are null, this removes them from the Item object.
+    // dynamodb doesn't like nulls or empty strings.
+    for (let prop in params.Item) {
+        if (!params.Item[prop][Object.keys(params.Item[prop])[0]])
+            delete params.Item[prop];
+    }
+
+    if(params.Item.postalCode && params.Item.postalCode.S) {
+        params.Item.postalCode.N = params.Item.postalCode.S.split('-')[0]; // Remove the last part of the zip code if it's there.
+        delete params.Item.postalCode.S;
+    }
+
 
     // Call DynamoDB to add the item to the table
     ddb.putItem(params, function (err, data) {
