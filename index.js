@@ -372,6 +372,10 @@ function getSlots(intent) {
 }
 
 async function StoreInteraction(handlerInput, address, requestedPrice, requestedType, foodType, priceRange, restaurant) {
+    await StoreToDynamo(handlerInput, address, requestedPrice, requestedType, foodType, priceRange, restaurant);
+}
+
+async function StoreToDynamo(handlerInput, address, requestedPrice, requestedType, foodType, priceRange, restaurant) {
     const { requestEnvelope } = handlerInput;
 
     const userId = requestEnvelope.session && requestEnvelope.session.user && requestEnvelope.session.user.userId;
