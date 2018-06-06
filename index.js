@@ -436,3 +436,32 @@ async function StoreToDynamo(handlerInput, address, requestedPrice, requestedTyp
         }
     });
 }
+
+async function StoreToSQL(handlerInput, address, requestedPrice, requestedType, foodType, priceRange, restaurant) {
+    var mysql = require('mysql');
+
+    var connection = mysql.createConnection({
+        host: process.env.RDS_HOSTNAME,
+        user: process.env.RDS_USERNAME,
+        password: process.env.RDS_PASSWORD,
+        port: process.env.RDS_PORT
+    });
+
+    connection.connect(function (err) {
+        if (err) {
+            console.error('Database connection failed: ' + err.stack);
+            return;
+        }
+
+        console.log('Connected to database.');
+    });
+
+    var post = { id: 1, title: 'Hello MySQL' };
+    var query = connection.query('INSERT INTO Invocation SET ?', post, function (error, results, fields) {
+        if (error) throw error;
+        // Neat!
+    });
+    consol
+
+    connection.end();
+}
