@@ -6,6 +6,7 @@
 const Alexa = require('ask-sdk-core');
 const AWS = require('aws-sdk')
 const https = require('https');
+var mysql = require('mysql');
 const ddb = new AWS.DynamoDB({ apiVersion: '2012-10-08' });
 
 
@@ -374,10 +375,6 @@ function getSlots(intent) {
 }
 
 async function StoreInteraction(handlerInput, address, requestedPrice, requestedType, foodType, priceRange, restaurant) {
-    await StoreToDynamo(handlerInput, address, requestedPrice, requestedType, foodType, priceRange, restaurant);
-}
-
-async function StoreToDynamo(handlerInput, address, requestedPrice, requestedType, foodType, priceRange, restaurant) {
     const { requestEnvelope } = handlerInput;
 
     const userId = requestEnvelope.session && requestEnvelope.session.user && requestEnvelope.session.user.userId;
@@ -386,84 +383,92 @@ async function StoreToDynamo(handlerInput, address, requestedPrice, requestedTyp
     const locale = requestEnvelope.request && requestEnvelope.request.locale;
 
     console.log(restaurant)
-    const params = {
-        TableName: 'RandomRestaurantUses',
-        Item: {
-            'userId': { S: userId },
-            'timestamp': { S: timestamp },
-            'deviceId': { S: deviceId },
-            'locale': { S: locale },
-            'requestedFoodType': { S: requestedType },
-            'matchedFoodType': { S: foodType },
-            'requestedPrice': { S: requestedPrice },
-            'matchedPrice': { S: priceRange },
-            'recommendedRestaurantName': { S: restaurant.name },
-            'recommendedRestaurantAlias': { S: restaurant.alias },
-            'recommendedRestaurantRating': { N: restaurant.rating && restaurant.rating.toString() },
-            'recommendedRestaurantPrice': { S: restaurant.price },
-            'recommendedRestaurantDistance': { N: restaurant.distance && restaurant.distance.toString() },
-            'recommendedRestaurantZip': { N: restaurant.location && restaurant.location.zip_code },
-        }
-    };
+    let item = {
+        'userId': { S: userId },
+        'timestamp': { S: timestamp },
+        'deviceId': { S: deviceId },
+        'locale': { S: locale },
+        'requestedFoodType': { S: requestedType },
+        'matchedFoodType': { S: foodType },
+        'requestedPrice': { S: requestedPrice },
+        'matchedPrice': { S: priceRange },
+        'recommendedRestaurantName': { S: restaurant.name },
+        'recommendedRestaurantAlias': { S: restaurant.alias },
+        'recommendedRestaurantRating': { N: restaurant.rating && restaurant.rating.toString() },
+        'recommendedRestaurantPrice': { S: restaurant.price },
+        'recommendedRestaurantDistance': { N: restaurant.distance && restaurant.distance.toString() },
+        'recommendedRestaurantZip': { N: restaurant.location && restaurant.location.zip_code },
+    }
 
     // Save each of the address fields to the item.
     for (let prop in address) {
         if (isNaN(address[prop])) {
-            params.Item[prop] = { S: address[prop] };
+            item[prop] = { S: address[prop] };
         }
         else { // If it is a number
-            params.Item[prop] = { N: address[prop] };
+            item[prop] = { N: address[prop] };
         }
     }
 
     // If any of the properties are null, this removes them from the Item object.
     // dynamodb doesn't like nulls or empty strings.
-    for (let prop in params.Item) {
-        if (!params.Item[prop][Object.keys(params.Item[prop])[0]])
-            delete params.Item[prop];
+    for (let prop in item) {
+        if (!item[prop][Object.keys(item[prop])[0]])
+            delete item[prop];
     }
 
-    if(params.Item.postalCode && params.Item.postalCode.S) {
-        params.Item.postalCode.N = params.Item.postalCode.S.split('-')[0]; // Remove the last part of the zip code if it's there.
-        delete params.Item.postalCode.S;
+    if(item.postalCode && item.postalCode.S) {
+        item.postalCode.N = item.postalCode.S.split('-')[0]; // Remove the last part of the zip code if it's there.
+        delete item.postalCode.S;
     }
 
+    await StoreToDynamo(item);
+    await StoreToSQL(item);
+}
+
+async function StoreToDynamo(item) {
+    const params = {
+        TableName: 'RandomRestaurantUses',
+        Item: item
+    };
 
     // Call DynamoDB to add the item to the table
     ddb.putItem(params, function (err, data) {
         if (err) {
-            console.log("Error saving to db", err);
+            console.log("Error saving to dynamodb", err);
         } else {
-            console.log("Successfully saved to db", data);
+            console.log("Successfully saved to dynamodb", data);
         }
     });
 }
 
-// async function StoreToSQL(handlerInput, address, requestedPrice, requestedType, foodType, priceRange, restaurant) {
-//     var mysql = require('mysql');
+async function StoreToSQL(item) {
+    var connection = mysql.createConnection({
+        host: process.env.RDS_HOSTNAME,
+        user: process.env.RDS_USERNAME,
+        password: process.env.RDS_PASSWORD,
+        port: process.env.RDS_PORT,
+        database: process.env.RDS_DATABASE
+    });
 
-//     var connection = mysql.createConnection({
-//         host: process.env.RDS_HOSTNAME,
-//         user: process.env.RDS_USERNAME,
-//         password: process.env.RDS_PASSWORD,
-//         port: process.env.RDS_PORT
-//     });
+    connection.connect(function (err) {
+        if (err) {
+            console.error('SQL Database connection failed: ' + err.stack);
+            return;
+        }
 
-//     connection.connect(function (err) {
-//         if (err) {
-//             console.error('Database connection failed: ' + err.stack);
-//             return;
-//         }
+        console.log('Connected to SQL database.');
+    });
 
-//         console.log('Connected to database.');
-//     });
+    // Transform dynamodb item into one usable by sql.
+    for (const prop in item) {
+        item[prop] = Object.values(item[prop])[0];
+    }
 
-//     var post = { id: 1, title: 'Hello MySQL' };
-//     var query = connection.query('INSERT INTO Invocation SET ?', post, function (error, results, fields) {
-//         if (error) throw error;
-//         // Neat!
-//     });
-//     consol
+    var query = connection.query('INSERT INTO Invocation SET ?', item, function (error, results, fields) {
+        if (error) throw error;
+        console.log('saved to SQL')
+    });
 
-//     connection.end();
-// }
+    connection.end();
+}
