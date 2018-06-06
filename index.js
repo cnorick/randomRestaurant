@@ -282,13 +282,13 @@ function buildPath(location, foodType, priceRange) {
 function buildSpeechOutput(restaurant, requestedPrice) {
     const category = restaurant.categories[0].title;
     const distance = (restaurant.distance * 0.000621371).toFixed(1); // miles
-    const name = sanitize(restaurant.name);
+    const name = restaurant.name;
 
     const response = `${name} is ${distance} miles away if you're in the mood for ${requestedPrice || ''} ${category}...
         Check the Alexa app for address and more information`;
 
     console.log(response);
-    return response;
+    return sanitize(response);
 }
 
 function buildCard(restaurant) {
@@ -312,6 +312,8 @@ function buildCard(restaurant) {
 }
 
 function sanitize(str) {
+    str = str.replace("'", "\'");
+    // May need to escape other characters too in the future.
     return str.replace('&', 'and');
 }
 
@@ -437,31 +439,31 @@ async function StoreToDynamo(handlerInput, address, requestedPrice, requestedTyp
     });
 }
 
-async function StoreToSQL(handlerInput, address, requestedPrice, requestedType, foodType, priceRange, restaurant) {
-    var mysql = require('mysql');
+// async function StoreToSQL(handlerInput, address, requestedPrice, requestedType, foodType, priceRange, restaurant) {
+//     var mysql = require('mysql');
 
-    var connection = mysql.createConnection({
-        host: process.env.RDS_HOSTNAME,
-        user: process.env.RDS_USERNAME,
-        password: process.env.RDS_PASSWORD,
-        port: process.env.RDS_PORT
-    });
+//     var connection = mysql.createConnection({
+//         host: process.env.RDS_HOSTNAME,
+//         user: process.env.RDS_USERNAME,
+//         password: process.env.RDS_PASSWORD,
+//         port: process.env.RDS_PORT
+//     });
 
-    connection.connect(function (err) {
-        if (err) {
-            console.error('Database connection failed: ' + err.stack);
-            return;
-        }
+//     connection.connect(function (err) {
+//         if (err) {
+//             console.error('Database connection failed: ' + err.stack);
+//             return;
+//         }
 
-        console.log('Connected to database.');
-    });
+//         console.log('Connected to database.');
+//     });
 
-    var post = { id: 1, title: 'Hello MySQL' };
-    var query = connection.query('INSERT INTO Invocation SET ?', post, function (error, results, fields) {
-        if (error) throw error;
-        // Neat!
-    });
-    consol
+//     var post = { id: 1, title: 'Hello MySQL' };
+//     var query = connection.query('INSERT INTO Invocation SET ?', post, function (error, results, fields) {
+//         if (error) throw error;
+//         // Neat!
+//     });
+//     consol
 
-    connection.end();
-}
+//     connection.end();
+// }
