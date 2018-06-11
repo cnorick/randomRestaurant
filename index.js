@@ -165,6 +165,53 @@ const GetAddressError = {
     },
 };
 
+const CanFulfillIntentRequest = {
+    canHandle(handlerInput) {
+        return handlerInput.requestEnvelope.request.type === 'CanFulfillIntentRequest';
+    },
+    handle(handlerInput) {
+        const { request } = handlerInput.requestEnvelope;
+
+        const validSlots = ["foodtype", "price"];
+
+        let responseObject = {
+            version: "1.0",
+            response: {
+                canFulfillIntent: {
+                    canFulfill: "YES"
+                }
+            }
+        };
+
+        // If it doesn't contain the restaurant intent, we can't handle it.
+        if (!(request.intent && request.intent.name === 'GetRestaurantIntent')) {
+            responseObject.response.canFulfillIntent.canFulfill = "NO";
+        }
+
+        responseObject.response.canFulfillIntent.slots = {};
+        for (const slot of Object.values(request.intent.slots)) {
+            // For the request to work, we have to know the slot name, else we can't support it.
+            // Also, the slot has to resolve to be used.
+            if (validSlots.includes(slot.name) &&
+                slot.resolutions &&
+                slot.resolutions.resolutionsPerAuthority &&
+                slot.resolutions.resolutionsPerAuthority.length != 0 &&
+                slot.resolutions.resolutionsPerAuthority[0].status &&
+                slot.resolutions.resolutionsPerAuthority[0].status.code === "ER_SUCCESS_MATCH"
+            ) {
+                // Can support
+                responseObject.response.canFulfillIntent.slots[slot.name] = { "canUnderstand": "YES", "canFulfill": "YES" };
+            }
+            else { // Can NOT support.
+                responseObject.response.canFulfillIntent.slots[slot.name] = { "canUnderstand": "NO", "canFulfill": "NO" };
+                responseObject.response.canFulfillIntent.canFulfill = "NO";
+            }
+        }
+
+        return responseObject;
+    }
+}
+
 const skillBuilder = Alexa.SkillBuilders.custom();
 
 exports.handler = skillBuilder
@@ -175,6 +222,7 @@ exports.handler = skillBuilder
         HelpIntent,
         CancelIntent,
         StopIntent,
+        CanFulfillIntentRequest,
         UnhandledIntent,
 )
     .addErrorHandlers(GetAddressError)
@@ -417,7 +465,7 @@ async function StoreInteraction(handlerInput, address, requestedPrice, requested
             delete item[prop];
     }
 
-    if(item.postalCode && item.postalCode.S) {
+    if (item.postalCode && item.postalCode.S) {
         item.postalCode.N = item.postalCode.S.split('-')[0]; // Remove the last part of the zip code if it's there.
         delete item.postalCode.S;
     }
