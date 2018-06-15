@@ -4,9 +4,10 @@
 'use strict';
 
 const Alexa = require('ask-sdk-core');
-const AWS = require('aws-sdk')
+const AWS = require('aws-sdk');
 const https = require('https');
-var mysql = require('mysql');
+const mysql = require('mysql');
+var Attr = require('dynamodb-data-types').AttributeValue;
 const ddb = new AWS.DynamoDB({ apiVersion: '2012-10-08' });
 
 
@@ -208,6 +209,7 @@ const CanFulfillIntentRequest = {
             }
         }
 
+        saveCanFulfillIntentRequest(request, responseObject);
         return responseObject;
     }
 }
@@ -519,4 +521,38 @@ async function StoreToSQL(item) {
     });
 
     connection.end();
+}
+
+// Saves the CanFulfillIntentRequest to dynamodb.
+function saveCanFulfillIntentRequest(request, responseObject) {
+    console.log(request, responseObject);
+
+    try {
+        const item = {
+            'requestId': { S: request.requestId },
+            'timestamp': { S: request.timestamp },
+            'intentName': { S: request.intent && request.intent.name },
+            'requestedSlots': { M: request.intent && request.intent.slots && Attr.wrap(request.intent.slots) },
+            'locale': { S: request.locale },
+            'canFulfill': { BOOL: responseObject.response.canFulfillIntent.canFulfill === "YES" },
+            'returnedSlots': { M: Attr.wrap(responseObject.response.canFulfillIntent.slots) }
+        };
+
+        const params = {
+            TableName: 'RandomRestaurantCanFulfillRequests',
+            Item: item
+        };
+
+        // Call DynamoDB to add the item to the table
+        ddb.putItem(params, function (err, data) {
+            if (err) {
+                console.log("Error saving to dynamodb", err);
+            } else {
+                console.log("Successfully saved to dynamodb", data);
+            }
+        });
+    } catch (error) {
+        console.log("error saving CanFulfillRequest to dynamodb.")
+        console.log(error);
+    }
 }
