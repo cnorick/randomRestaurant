@@ -43,6 +43,12 @@ const GetRestaurantIntent = {
 
         let addressObject;
 
+        let { priceRange, requestedPrice, foodType, requestedType } = getSlots(request.intent);
+
+        // Sometimes it takes a while to get the random restaurant from yelp and get the address.
+        // In the meantime, send a progressive response.
+        sendProgressiveResponse(handlerInput, requestedPrice, requestedType);
+
         try {
             addressObject = await GetAddress(handlerInput);
         } catch (error) {
@@ -52,7 +58,6 @@ const GetRestaurantIntent = {
             else throw error;
         }
 
-        let { priceRange, requestedPrice, foodType, requestedType } = getSlots(request.intent);
         const restaurant = await GetRandomRestaurant(addressObject.string, foodType, priceRange);
 
         if (!restaurant) {
@@ -280,11 +285,7 @@ async function GetAddress(handlerInput) {
 // Chooses a random restaurant from a list returned from yelp.
 async function GetRandomRestaurant(address, foodType, priceRange) {
     const businesses = await QueryYelp(address, foodType, priceRange);
-    if (businesses.length === 0) {
-        return null;
-    }
-    const randIndex = Math.floor(Math.random() * businesses.length);
-    return businesses[randIndex];
+    return getRandomArrayEntry(businesses);
 }
 
 // Returns a list of businesses from yelp that meet the specified criteria.
@@ -555,4 +556,53 @@ function saveCanFulfillIntentRequest(request, responseObject) {
         console.log("error saving CanFulfillRequest to dynamodb.")
         console.log(error);
     }
+}
+
+function buildProgressiveResponse(requestedPrice, requestedType) {
+    const phrases = [
+        `Searching for ${requestedPrice || ''} ${requestedType || ''} restaurants open in your area`,
+        `Looking nearby for ${requestedPrice || ''} ${requestedType || ''} restaurants`,
+        `Looking for ${requestedPrice || ''} ${requestedType || ''}`,
+        `Searching <break time="800ms">`,
+        `Please wait while I search <break time="400ms">`,
+        `Looking for open restaurants nearby`,
+        `Hold on. Looking nearby for ${requestedPrice || ''} ${requestedType || ''}`,
+        `Looking for restaurants close to you`,
+        `Scanning the area for ${requestedPrice || ''} ${requestedType || ''}`,
+        `${requestedPrice || ''} ${requestedType || ''} coming up!`
+    ];
+    const pauseRange = [800, 1200];
+
+    const chosenPhrase = getRandomArrayEntry(phrases);
+
+    // Pause time makes the speech sound more natural.
+    const pauseTime = (Math.random() * pauseRange[1] - pauseRange[0]) + pauseRange[0];
+
+    return `${chosenPhrase}. <break time="${pauseTime}ms" />`;
+}
+
+function sendProgressiveResponse(handlerInput, requestedPrice, requestedType) {
+    const { requestId } = handlerInput.requestEnvelope.request;
+    const directiveServiceClient = handlerInput.serviceClientFactory.getDirectiveServiceClient();
+
+    const speech = buildProgressiveResponse(requestedPrice, requestedType);
+  
+    const directive = {
+      header: {
+        requestId,
+      },
+      directive: {
+        type: 'VoicePlayer.Speak',
+        speech: speech
+      },
+    };
+  
+    return directiveServiceClient.enqueue(directive);
+}
+
+function getRandomArrayEntry(array) {
+    if (array.length === 0) {
+        return null;
+    }
+    return array[Math.floor(Math.random() * array.length)];
 }
