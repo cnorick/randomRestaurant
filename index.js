@@ -474,7 +474,6 @@ async function StoreInteraction(handlerInput, address, requestedPrice, requested
     }
 
     await StoreToDynamo(item);
-    await StoreToSQL(item);
 }
 
 async function StoreToDynamo(item) {
