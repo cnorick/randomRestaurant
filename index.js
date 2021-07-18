@@ -23,7 +23,7 @@ const responses = {
     GOODBYE: 'Goodbye!',
     YELP_ATTRIBUTION: ' ... Nearby restaurants provided by Yelp',
     NOTIFY_MISSING_PERMISSIONS: 'Please enable Location permissions in the Amazon Alexa app.',
-    NO_ADDRESS: "It looks like you don't have an address set. You can set your address from the companion app.",
+    NO_ADDRESS: "It looks like you don't have an address set. You can set your address in the Alexa app.",
     ERROR: "Uh Oh. Looks like something went wrong.",
     UNHANDLED: 'This skill doesn\'t support that. Please ask something else.',
     LOCATION_FAILURE: 'There was an error with the Device Address API. Make sure your address is set in the Alex app and try again.',
@@ -337,7 +337,7 @@ function buildSpeechOutput(restaurant, requestedPrice) {
     const name = restaurant.name;
 
     const response = `${name} is ${distance} miles away if you're in the mood for ${requestedPrice || ''} ${category}...
-        Check the Alexa app for address and more information`;
+        Check the activity section of the Alexa app for address and more information`;
 
     console.log(response);
     return sanitize(response);
