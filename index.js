@@ -562,13 +562,13 @@ function buildProgressiveResponse(requestedPrice, requestedType) {
     const phrases = [
         `Searching for ${requestedPrice || ''} ${requestedType || ''} restaurants open in your area`,
         `Looking nearby for ${requestedPrice || ''} ${requestedType || ''} restaurants`,
-        `Looking for ${requestedPrice || ''} ${requestedType || ''}`,
+        `Looking for ${requestedPrice || ''} ${requestedType || 'food'}`,
         `Searching <break time="800ms">`,
         `Please wait while I search <break time="400ms">`,
         `Looking for open restaurants nearby`,
-        `Hold on. Looking nearby for ${requestedPrice || ''} ${requestedType || ''}`,
+        `Hold on. Looking nearby for ${requestedPrice || ''} ${requestedType || 'food'}`,
         `Looking for restaurants close to you`,
-        `Scanning the area for ${requestedPrice || ''} ${requestedType || ''}`,
+        `Scanning the area for ${requestedPrice || ''} ${requestedType || 'foo'}`,
         `${requestedPrice || ''} ${requestedType || ''} coming up!`
     ];
     const pauseRange = [800, 1200];
