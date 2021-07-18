@@ -350,8 +350,10 @@ function buildCard(restaurant) {
     const url = restaurant.url;
     const content = `${address}
     ${phone}
-    
-    Nearby restaurant search provided by Yelp.
+
+    \r\nIf you like using this skill, consider buying me a coffee ☕❤: ko-fi.com/nathano
+
+    \r\nNearby restaurant search provided by Yelp.
     `;
     return {
         title: restaurant.name,
