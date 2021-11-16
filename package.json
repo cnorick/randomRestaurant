@@ -26,7 +26,7 @@
   "dependencies": {
     "ask-sdk-core": "^2.0.7",
     "ask-sdk-model": "^1.5.0",
-    "aws-sdk": "^2.302.0",
+    "aws-sdk": "^2.814.0",
     "dynamodb-data-types": "^3.0.1",
     "https": "^1.0.0",
     "mysql": "^2.16.0"
